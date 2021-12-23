@@ -5,3 +5,23 @@
  ### Запуск
 
 `npm run exe` и запустите получившийся exe-шник
+
+### Конфигурация
+
+В db/.db надо указать, что мониторить
+
+```dotenv
+SOURCE:internet
+AMOUNT:7
+PRICE:105
+```
+
+Или
+
+```dotenv
+SOURCE:calls
+AMOUNT:115
+PRICE:92
+
+# Можно оставить комментарий
+```
