@@ -383,6 +383,13 @@ export const parseArgv = () => {
       type: Number,
       short: `p`,
     },
+    yes: {
+      type: Boolean,
+      short: `y`,
+      value: (yes) => {
+        return !!yes;
+      }
+    }
   };
   return parser.parse(process.argv, {
     rules

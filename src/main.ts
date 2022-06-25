@@ -1,5 +1,5 @@
 import { askForDB, parseArgv, readDb, waitFor } from "./utils/functions";
-import { MonitorDB, MonitorDBInterface } from "./utils/monitor-d-b";
+import { MonitorDB } from "./utils/monitor-d-b";
 import { Task } from "./model/task";
 import { TaskScreen } from "./utils/console-utils";
 import { ProgressBar } from "./logger/progressbar";
@@ -9,12 +9,18 @@ const DELAY = 1000;
 
 (async () => {
   let db: MonitorDB;
-  const argv = parseArgv();
-  const argvDB = {
-    source: argv.parsed.source,
-    amount: argv.parsed.amount,
-    price: argv.parsed.price,
-  };
+  let argvDB;
+  try {
+    const argv = parseArgv();
+    argvDB = {
+      source: argv.parsed.source,
+      amount: argv.parsed.amount,
+      price: argv.parsed.price,
+    };
+  } catch (e) {
+    console.error(chalk.red(`-! Cannot parse arguments`));
+  }
+
 
   if (MonitorDB.validate(argvDB)) {
     db = argvDB;
