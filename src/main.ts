@@ -9,9 +9,10 @@ const DELAY = 1000;
 
 (async () => {
   let db: MonitorDB;
+  let argv;
   let argvDB;
   try {
-    const argv = parseArgv();
+    argv = parseArgv();
     argvDB = {
       source: argv.parsed.source,
       amount: argv.parsed.amount,
@@ -21,6 +22,7 @@ const DELAY = 1000;
     console.error(chalk.red(`-! Cannot parse arguments`));
   }
 
+  const showAccount = !!argv.parsed.account;
 
   if (MonitorDB.validate(argvDB)) {
     db = argvDB;
@@ -42,7 +44,7 @@ const DELAY = 1000;
     while (doWhile) {
       await task.update();
 
-      screen.print();
+      await screen.print(showAccount);
 
       const progressBar = new ProgressBar();
       const progressMax = progressBar.progressMaxSymbols;

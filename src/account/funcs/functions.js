@@ -1,9 +1,4 @@
-/* global document */
-
 import {log} from "../logger/logger";
-import {MonitorDB} from "./monitor-d-b";
-import parser from "argv-parser";
-import chalk from "chalk";
 
 const Fs = require(`fs`);
 
@@ -43,7 +38,7 @@ export const linkGetterGenerator = (origin) => (link = ``) => {
 export const isLogined = async (page, timeout = 3000) => {
   try {
     const s = `header .header-navbar-login .gtm-new-navigation-lk`;
-    await page.waitFor(s, {timeout});
+    await page.waitForSelector(s, {timeout});
     return true;
   } catch (e) {
     return false;
@@ -153,7 +148,16 @@ export const rewriteDb = async (db) => {
 };
 
 export const readDb = async () => {
-  const db = {};
+  const db = {
+    validate: function f() {
+      return !(db.phone === undefined ||
+        db.iterations === undefined ||
+        db.delay === undefined ||
+        db.source === undefined ||
+        db.amount === undefined ||
+        db.price === undefined);
+    }
+  };
   const dir = `./db`;
 
   if (!Fs.existsSync(dir)) {
@@ -216,16 +220,16 @@ export const rand8 = () => {
 
 export const wClick = async (page, s, time = -1) => {
   if (time > 0) {
-    await page.waitFor(time);
+    await page.waitForTimeout(time);
   } else {
-    await page.waitFor(s);
+    await page.waitForSelector(s);
   }
   await page.click(s);
 };
 
 
 export const askForDB = async (db) => {
-  if (!MonitorDB.validate(db)) {
+  if (!db.validate()) {
     await rewriteDb(db);
   } else {
     log(`-@ Read information from DB? [Y/N] (default = Y)`);
@@ -353,52 +357,10 @@ export const waitFor = async (time) => {
 };
 
 export const getCentrifyingSpaces = (length) => {
-  return ` `.repeat(getMetrics(length).spaces);
-};
+  let spaces = ``;
+  for (let i = 0; i < getMetrics(length).spaces; i++) {
+    spaces += ` `;
+  }
 
-export const parseArgv = () => {
-  const rules = {
-    source: {
-      type: String,
-      short: `t`,
-      value: (type) => {
-        if (!type) {
-          return;
-        }
-
-        if (![`internet`, `calls`].includes(type)) {
-          const consider = type.startsWith(`c`) ? `calls` : `internet`;
-          console.warn(chalk.yellow(`-X Will consider "${type}" as "${consider}"`));
-          return consider;
-        }
-
-        return type;
-      },
-    },
-    amount: {
-      type: Number,
-      short: `a`,
-    },
-    price: {
-      type: Number,
-      short: `p`,
-    },
-    yes: {
-      type: Boolean,
-      short: `y`,
-      value: (yes) => {
-        return !!yes;
-      }
-    },
-    account: {
-      type: Boolean,
-      short: `acc`,
-      value: (yes) => {
-        return !!yes;
-      }
-    }
-  };
-  return parser.parse(process.argv, {
-    rules
-  });
+  return spaces;
 };

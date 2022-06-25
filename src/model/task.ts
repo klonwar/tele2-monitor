@@ -7,6 +7,7 @@ import {Analytics} from "./analytics";
 export class Task {
   readonly url: string;
   readonly db: MonitorDBInterface;
+  readonly userInfo = {"calls0":0,"internet0":0,"sold":{"internet":0,"calls":0},"placed":{"internet":0,"calls":0},"active":{"calls":0,"internet":0,"list":[]},"dBalance":0,"balance":6982.56,"rests":{"tariffCost":150,"internet":"65,03 ГБ","calls":"6667","sellable":{"internet":"30.0","calls":700}}};
 
   private bigLotsList: Array<LotItem> = [];
   private removedLots: Array<{ lot: LotItem, index: number }> = [];

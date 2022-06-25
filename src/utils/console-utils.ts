@@ -1,9 +1,33 @@
-import {getCentrifyingSpaces, getMetrics} from "./functions";
+import { getCentrifyingSpaces, getMetrics } from "./functions";
 import tele2Config from "../config/config";
-import {LotItem} from "../model/lot";
-import {Task} from "../model/task";
+import { LotItem } from "../model/lot";
+import { Task } from "../model/task";
 import chalk from "chalk";
+import { printAccountLine } from "../account/logger/bot-screen";
 
+const getAccountRows = (userInfo) => {
+  if (userInfo.sold && userInfo.rests) {
+    const pfDelta = userInfo.dBalance - userInfo.rests.tariffCost;
+    const pfString = `${((pfDelta >= 0)) ? chalk.green(`+ ` + Math.abs(pfDelta) + ` р.`) : chalk.red(`- ` + Math.abs(pfDelta) + ` р.`)}`;
+
+    return [
+      `CURRENT PERIOD DYNAMICS:`, [
+        `Calls bought: ${chalk.green(userInfo.sold.calls)} lot${(userInfo.sold.calls !== 1) ? `s` : ``} / ${userInfo.placed.calls} placed`,
+        `Internet bought: ${chalk.green(userInfo.sold.internet)} lot${(userInfo.sold.internet !== 1) ? `s` : ``} / ${userInfo.placed.internet} placed`,
+        `Balance change: ${chalk.green(`+ ${userInfo.dBalance} р.`)}`
+      ], `ACCOUNT INFO:`, [
+        `Balance: ${userInfo.balance} p.`,
+        `Calls: ${userInfo.rests.calls} МИН (sellable ${userInfo.rests.sellable.calls} МИН)`,
+        `Internet: ${userInfo.rests.internet} (sellable ${userInfo.rests.sellable.internet} ГБ)`,
+        `Tariff cost: ${userInfo.rests.tariffCost} р.`,
+      ], `Profit: ${pfString}`
+    ];
+  } else {
+    return [
+      `NO INFO`
+    ];
+  }
+};
 
 export class ConsoleLot {
   lotItem: LotItem;
@@ -14,7 +38,7 @@ export class ConsoleLot {
 
   private getSmallId = () => {
     return this.lotItem.id.substring(this.lotItem.id.length - 3);
-  }
+  };
 
   private getSmallIndicator = (): string => {
     switch (this.lotItem.indicator) {
@@ -31,13 +55,13 @@ export class ConsoleLot {
       case `none`:
         return ` `;
     }
-  }
+  };
 
   getInfo = (): Array<string> => [
     this.getSmallIndicator(),
     this.getSmallId(),
     this.lotItem.name,
-  ]
+  ];
 
 }
 
@@ -79,9 +103,11 @@ export class TaskScreen {
   }
 
 
-  private printTable(): void {
-    const {screenWidth} = getMetrics();
-    const printLine = () => console.log(`+${`-`.repeat(screenWidth - 2)}+`);
+  private async printTable(showAccount: boolean): Promise<void> {
+    const { screenWidth } = getMetrics();
+    const printLine = (offset = 0) => {
+      console.log(`+${`-`.repeat(screenWidth - 2 - offset)}+`);
+    };
 
     let columnWidth: Array<number> = [];
     const lines: Array<Array<string>> = [];
@@ -101,17 +127,102 @@ export class TaskScreen {
       lines.push(info);
     }
 
+    let accRows;
+    let accRow = 0;
+    let accLine = 0;
+    let maxConsumedWidth = 0;
+    let onNoMoreRowsReached = false;
 
-    printLine();
+    if (showAccount) {
+      accRows = getAccountRows(this.task.userInfo);
+    }
+
+    const onNoMoreRows = (firstCallback, secondCallback) => {
+      if (!onNoMoreRowsReached) {
+        firstCallback();
+      } else {
+        secondCallback();
+      }
+      onNoMoreRowsReached = true;
+    };
+
+    const onNoMoreLines = async (callback, noMoreRowsCallback1, noMoreRowsCallback2) => {
+      accRow++;
+      accLine = 0;
+
+      const consumedWidth = await printAccountLine(accRow, accLine, accRows);
+      maxConsumedWidth = Math.max(maxConsumedWidth, consumedWidth);
+
+      if (consumedWidth === -1) {
+        onNoMoreRows(noMoreRowsCallback1, noMoreRowsCallback2);
+      } else {
+        accLine++;
+        callback();
+      }
+    };
+
+    const printAccountLineBorder = async () => {
+      const consumedWidth = await printAccountLine(accRow, accLine, accRows);
+      maxConsumedWidth = Math.max(maxConsumedWidth, consumedWidth);
+
+      if (consumedWidth === -1) {
+        onNoMoreRows(() => {
+          process.stdout.write(`+` + `-`.repeat(maxConsumedWidth - 2) + `+`);
+          printLine(maxConsumedWidth);
+        }, () => {
+          process.stdout.write(` `.repeat(maxConsumedWidth));
+          printLine(maxConsumedWidth);
+        });
+      } else if (consumedWidth === null) {
+        await onNoMoreLines(() => {
+          printLine(maxConsumedWidth);
+        }, () => {
+          process.stdout.write(`+` + `-`.repeat(maxConsumedWidth - 2) + `+`);
+          printLine(maxConsumedWidth);
+        }, () => {
+          process.stdout.write(` `.repeat(maxConsumedWidth));
+          printLine(maxConsumedWidth);
+        });
+      } else {
+        printLine(consumedWidth);
+        accLine++;
+      }
+    };
 
     for (let i = 0; i < lines.length; i++) {
+      if (showAccount) {
+        await printAccountLineBorder();
+      } else {
+        printLine();
+      }
       let str = ``;
+      if (showAccount) {
+        const offset = await printAccountLine(accRow, accLine, accRows);
+        maxConsumedWidth = Math.max(maxConsumedWidth, offset);
+        accLine++;
+
+        if (offset === null) {
+          await onNoMoreLines(() => {
+            //process.stdout.write(` `.repeat(maxConsumedWidth));
+          }, () => {
+            process.stdout.write(`+` + `-`.repeat(maxConsumedWidth - 2) + `+`);
+          }, () => {
+            process.stdout.write(` `.repeat(maxConsumedWidth));
+          });
+        } else if (offset === -1) {
+          onNoMoreRows(() => {
+            process.stdout.write(`+` + `-`.repeat(maxConsumedWidth - 2) + `+`);
+          }, () => {
+            process.stdout.write(` `.repeat(maxConsumedWidth));
+          });
+        }
+      }
       lines[i].forEach((item, index) => {
         str += `${item.padEnd(columnWidth[index])} | `;
       });
       str = str.substring(0, str.length - 2);
       str = ` ` + str;
-      str += ` `.repeat(screenWidth - str.length - 2);
+      str += ` `.repeat(screenWidth - str.length - 2 - maxConsumedWidth);
       str = `|${str}|`;
       if (this.task.lots?.[i].indicator === `placed`) {
         str = chalk.rgb(0, 0, 0).bgGreenBright(str);
@@ -122,17 +233,21 @@ export class TaskScreen {
       }
 
       console.log(str);
-      printLine();
+
     }
 
-
+    if (showAccount) {
+      await printAccountLineBorder();
+    } else {
+      printLine();
+    }
   }
 
-  print = (): void => {
+  print = async (showAccount = false): Promise<void> => {
     this.clear();
     // TaskScreen.printLabel();
     this.printInfo();
-    this.printTable();
+    await this.printTable(showAccount);
   };
 
   clear = (): void => {
