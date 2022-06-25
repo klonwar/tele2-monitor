@@ -2,6 +2,8 @@
 
 import {log} from "../logger/logger";
 import {MonitorDB} from "./monitor-d-b";
+import parser from "argv-parser";
+import chalk from "chalk";
 
 const Fs = require(`fs`);
 
@@ -352,4 +354,37 @@ export const waitFor = async (time) => {
 
 export const getCentrifyingSpaces = (length) => {
   return ` `.repeat(getMetrics(length).spaces);
+};
+
+export const parseArgv = () => {
+  const rules = {
+    source: {
+      type: String,
+      short: `t`,
+      value: (type) => {
+        if (!type) {
+          return;
+        }
+
+        if (![`internet`, `calls`].includes(type)) {
+          const consider = type.startsWith(`c`) ? `calls` : `internet`;
+          console.warn(chalk.yellow(`-X Will consider "${type}" as "${consider}"`));
+          return consider;
+        }
+
+        return type;
+      },
+    },
+    amount: {
+      type: Number,
+      short: `a`,
+    },
+    price: {
+      type: Number,
+      short: `p`,
+    },
+  };
+  return parser.parse(process.argv, {
+    rules
+  });
 };
