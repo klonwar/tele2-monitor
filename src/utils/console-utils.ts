@@ -20,7 +20,7 @@ const getAccountRows = (userInfo) => {
         `Balance: ${userInfo.balance} p.`,
         `Calls: ${userInfo.rests.calls} МИН (sellable ${userInfo.rests.sellable.calls} МИН)`,
         `Internet: ${userInfo.rests.internet} (sellable ${userInfo.rests.sellable.internet} ГБ)`,
-        `Tariff cost: ${userInfo.rests.tariffCost} р.`,
+        `Tariff cost: ${chalk.red(`- ${userInfo.rests.tariffCost} р.`)}`,
       ], `Profit: ${pfString}`,
     ];
   } else {
