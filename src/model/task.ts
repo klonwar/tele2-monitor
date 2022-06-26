@@ -233,7 +233,7 @@ export class Task {
               internet: (parseFloat(item.tariffPackages.internet.replace(`,`, `.`)) - rollover.internet).toFixed(1),
               calls: item.tariffPackages.min - rollover.calls
             },
-            lotUplift: this.userInfo.rests?.lotUplift ?? 0,
+            lotUplift: this.userInfo.rests?.lotUplift || 0,
           };
           // }
         }
