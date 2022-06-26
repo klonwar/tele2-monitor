@@ -7,20 +7,21 @@ import { printAccountLine } from "../account/logger/bot-screen";
 
 const getAccountRows = (userInfo) => {
   if (userInfo.sold && userInfo.rests) {
-    const pfDelta = userInfo.dBalance - userInfo.rests.tariffCost;
+    const pfDelta = userInfo.dBalance - userInfo.rests.tariffCost - userInfo.rests.lotUplift;
     const pfString = `${((pfDelta >= 0)) ? chalk.green(`+ ` + Math.abs(pfDelta) + ` р.`) : chalk.red(`- ` + Math.abs(pfDelta) + ` р.`)}`;
 
     return [
       `CURRENT PERIOD DYNAMICS:`, [
         `Calls bought: ${chalk.green(userInfo.sold.calls)} lot${(userInfo.sold.calls !== 1) ? `s` : ``} / ${userInfo.placed.calls} placed`,
         `Internet bought: ${chalk.green(userInfo.sold.internet)} lot${(userInfo.sold.internet !== 1) ? `s` : ``} / ${userInfo.placed.internet} placed`,
-        `Balance change: ${chalk.green(`+ ${userInfo.dBalance} р.`)}`
+        `Income: ${chalk.green(`+ ${userInfo.dBalance} р.`)}`,
+        `Lot uplift: ${chalk.red(`- ${userInfo.rests.lotUplift} р.`)}`,
       ], `ACCOUNT INFO:`, [
         `Balance: ${userInfo.balance} p.`,
         `Calls: ${userInfo.rests.calls} МИН (sellable ${userInfo.rests.sellable.calls} МИН)`,
         `Internet: ${userInfo.rests.internet} (sellable ${userInfo.rests.sellable.internet} ГБ)`,
         `Tariff cost: ${userInfo.rests.tariffCost} р.`,
-      ], `Profit: ${pfString}`
+      ], `Profit: ${pfString}`,
     ];
   } else {
     return [

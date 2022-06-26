@@ -232,7 +232,8 @@ export class Task {
             sellable: {
               internet: (parseFloat(item.tariffPackages.internet.replace(`,`, `.`)) - rollover.internet).toFixed(1),
               calls: item.tariffPackages.min - rollover.calls
-            }
+            },
+            lotUplift: this.userInfo.rests?.lotUplift ?? 0,
           };
           // }
         }
@@ -252,6 +253,24 @@ export class Task {
         if (response.data) {
           this.userInfo.balance = (response.data.value) ? response.data.value : this.userInfo.balance;
         }
+
+        await request.respond({
+          status: 200,
+          contentType: `application/json`,
+          body: JSON.stringify(response),
+        });
+      } else if (request.url().includes(`charges`) && request.method() === `GET`) {
+        const response = await (await fetch(request.url(), {
+          method: request.method(),
+          body: request.postData(),
+          headers: request.headers()
+        })).json();
+
+        this.userInfo.rests.lotUplift = response
+          .data?.filter((item) => item.type === `CONTENT`)[0]
+          ?.subGroups.filter((item) => item.name === `Разовые операции`)[0]
+          ?.consumingServices.filter((item) => item.billingServiceId === 0)[0]
+          .amount.amount;
 
         await request.respond({
           status: 200,
@@ -374,6 +393,7 @@ export class Task {
 
       // Перейдем на страницу с лотами, чтобы перехватить запрос и получить инфу о профиле
       await this.gotoWithPreloader(`/stock-exchange/my`);
+      await this.gotoWithPreloader(`/lk/expenses`);
 
       // Сохраним куки, вдруг поменялись
       const cookies = await this.page.cookies();
