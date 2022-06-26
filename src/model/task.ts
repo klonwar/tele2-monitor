@@ -267,10 +267,10 @@ export class Task {
         })).json();
 
         this.userInfo.rests.lotUplift = response
-          .data?.filter((item) => item.type === `CONTENT`)[0]
-          ?.subGroups.filter((item) => item.name === `Разовые операции`)[0]
-          ?.consumingServices.filter((item) => item.billingServiceId === 0)[0]
-          .amount.amount;
+          ?.data?.filter((item) => item.type === `CONTENT`)?.[0]
+          ?.subGroups?.filter((item) => item.name === `Разовые операции`)?.[0]
+          ?.consumingServices?.filter((item) => item.billingServiceId === 0)?.[0]
+          ?.amount?.amount || 0;
 
         await request.respond({
           status: 200,
