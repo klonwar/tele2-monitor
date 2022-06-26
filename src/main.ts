@@ -16,13 +16,15 @@ const DELAY = 1000;
     argvDB = {
       source: argv.parsed.source,
       amount: argv.parsed.amount,
-      price: argv.parsed.price,
+      price: argv.parsed.cost,
+      phone: argv.parsed.phone,
+      headless: argv.parsed.headless,
     };
   } catch (e) {
     console.error(chalk.red(`-! Cannot parse arguments`));
   }
 
-  const showAccount = !!argv.parsed.account;
+  const showAccount = !!argv.parsed.phone;
 
   if (MonitorDB.validate(argvDB)) {
     db = argvDB;
@@ -37,7 +39,8 @@ const DELAY = 1000;
       (db.source === `internet`) ? `data` : `voice`
     }&volume=${db.amount}&cost=${db.price}&offset=0&limit=20`;
 
-    const task = new Task({ url, db });
+    const task = new Task({ url, db, showAccount });
+    await task.init();
     const screen = new TaskScreen(task);
 
     const doWhile = true;

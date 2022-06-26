@@ -10,6 +10,7 @@
     "module": "ESNext",
     "esModuleInterop": true,
     "moduleResolution": "node",
+    "resolveJsonModule": true,
     "compilerOptions": {
       "target": "esnext",
       "module": "commonjs"

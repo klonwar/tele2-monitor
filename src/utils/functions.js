@@ -379,9 +379,9 @@ export const parseArgv = () => {
       type: Number,
       short: `a`,
     },
-    price: {
+    cost: {
       type: Number,
-      short: `p`,
+      short: `c`,
     },
     yes: {
       type: Boolean,
@@ -390,13 +390,27 @@ export const parseArgv = () => {
         return !!yes;
       }
     },
-    account: {
+    phone: {
+      type: Number,
+      short: `p`,
+      value: (phone) => {
+        if (!/[0-9]{10}/.test(phone)) {
+          console.error(chalk.red(`-X Phone must be in `));
+          return null;
+        }
+
+        return phone;
+      }
+    },
+    headless: {
       type: Boolean,
-      short: `acc`,
+      short: `h`,
       value: (yes) => {
+        if (yes === undefined)
+          return true;
         return !!yes;
       }
-    }
+    },
   };
   return parser.parse(process.argv, {
     rules
