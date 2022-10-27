@@ -92,6 +92,10 @@ export class Task {
   };
 
   private async initInterceptors(): Promise<void> {
+    const client = await this.page.target().createCDPSession();
+    await client.send(`Network.enable`);
+    await client.send(`Network.setBypassServiceWorker`, { bypass: true });
+    
     await this.page.setRequestInterception(true);
     await this.page.on(`request`, async (request) => {
       if (request.url().endsWith(`created`) && request.method() === `GET`) {
