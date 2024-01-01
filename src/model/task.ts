@@ -95,7 +95,7 @@ export class Task {
     const client = await this.page.target().createCDPSession();
     await client.send(`Network.enable`);
     await client.send(`Network.setBypassServiceWorker`, { bypass: true });
-    
+
     await this.page.setRequestInterception(true);
     await this.page.on(`request`, async (request) => {
       if (request.url().endsWith(`created`) && request.method() === `GET`) {
@@ -304,6 +304,7 @@ export class Task {
       });
 
       log(`-@ Logging in`);
+      await this.page.waitForTimeout(1000);
       await wClick(this.page, `span.login-action-short-text`);
 
       for (let erCount = 1; erCount <= 3; erCount++) {
