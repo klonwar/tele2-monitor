@@ -303,10 +303,16 @@ export class Task {
         InternetException.handle();
       });
 
-      log(`-@ Logging in`);
       await this.page.waitForTimeout(1000);
-      await wClick(this.page, `span.login-action-short-text`);
+      log(`-@ Checking bubble`);
+      await wClick(this.page, `.ask-for-region2 .bubble__button`);
 
+      await this.page.waitForTimeout(1000);
+      log(`-@ Logging in`);
+      log(`-@ clicking item`);
+      await wClick(this.page, `header span.tele2-ui-kit__button-text-children`);
+      await wClick(this.page, `header span.tele2-ui-kit__button-text-children`);
+      log(`-@ clicked item`);
       for (let erCount = 1; erCount <= 3; erCount++) {
         if (await isLogined(this.page)) {
           const cookies = await this.page.cookies();
@@ -340,7 +346,7 @@ export class Task {
             await this.page.waitForTimeout(100);
           } while (await (async () => {
             try {
-              await this.page.waitForSelector(`.static-error-text`, { timeout: 5000 });
+              await this.page.waitForSelector(`form .error-text`, { timeout: 5000 });
               warn(`Wrong code. Repeating`);
               return true;
             } catch (e) {

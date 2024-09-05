@@ -35,9 +35,9 @@ export const linkGetterGenerator = (origin) => (link = ``) => {
   return origin + `/` + link;
 };
 
-export const isLogined = async (page, timeout = 3000) => {
+export const isLogined = async (page, timeout = 10000) => {
   try {
-    const s = `header .header-navbar-login .gtm-new-navigation-lk`;
+    const s = `header .t2-header__phone-number`;
     await page.waitForSelector(s, {timeout});
     return true;
   } catch (e) {
