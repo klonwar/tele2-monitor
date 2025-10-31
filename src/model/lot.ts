@@ -8,8 +8,10 @@ export class LotItem {
   id: string;
   name: string;
   emojisArray: Array<Emoji> = [];
+  my: boolean;
 
-  constructor(tele2LotItem: Tele2LotItem) {
+  constructor(tele2LotItem: Tele2LotItem, isMy?: boolean) {
+    this.my = isMy || false;
     this.id = tele2LotItem.id;
     this.name = tele2LotItem.seller.name || `Anon`;
     for (let i = 0; i < 3; i++) {

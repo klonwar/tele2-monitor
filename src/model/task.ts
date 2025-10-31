@@ -83,7 +83,11 @@ export class Task {
 
     this.analytics.stopRecordingFetchTime();
 
-    const newLotsList: Array<LotItem> = resp.data.map((item) => new LotItem(item));
+    const newLotsList: Array<LotItem> = resp.data.map((item) => {
+      const isMy = this.userInfo?.active?.list?.some((myItem) => myItem.id === item.id);
+
+      return new LotItem(item, isMy);
+    });
 
     this.updateDifference(newLotsList);
     this.compileLists();
@@ -191,7 +195,7 @@ export class Task {
 
               return (diff <= 1);
             });
-     }
+          }
         }
       } catch (e: any) {
         warn(`-! Created lots interceptor error: [${e.message}]`);

@@ -42,6 +42,10 @@ export class ConsoleLot {
   };
 
   private getSmallIndicator = (): string => {
+    if (this.lotItem.my) {
+      return `★`;
+    }
+
     switch (this.lotItem.indicator) {
       case `down`:
         return `↓`;
@@ -225,7 +229,9 @@ export class TaskScreen {
       str = ` ` + str;
       str += ` `.repeat(screenWidth - str.length - 2 - maxConsumedWidth);
       str = `|${str}|`;
-      if (this.task.lots?.[i].indicator === `placed`) {
+      if (this.task.lots?.[i].my) {
+        str = chalk.rgb(0, 0, 0).bgBlueBright(str);
+      } else if (this.task.lots?.[i].indicator === `placed`) {
         str = chalk.rgb(0, 0, 0).bgGreenBright(str);
       } else if (this.task.lots[i].indicator === `removed`) {
         str = chalk.rgb(0, 0, 0).bgRedBright(str);
