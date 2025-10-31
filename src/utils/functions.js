@@ -367,7 +367,7 @@ export const parseArgv = () => {
         }
 
         if (![`internet`, `calls`].includes(type)) {
-          const consider = type.startsWith(`c`) ? `calls` : `internet`;
+          const consider = type.startsWith(`c`) || type.startsWith(`m`) ? `calls` : `internet`;
           console.warn(chalk.yellow(`-X Will consider "${type}" as "${consider}"`));
           return consider;
         }

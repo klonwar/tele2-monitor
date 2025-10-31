@@ -1,5 +1,4 @@
 import { LotsResponse } from "../utils/tele2-responses";
-import fetch from "node-fetch";
 import { LotItem } from "./lot";
 import { MonitorDBInterface } from "../utils/monitor-d-b";
 import { Analytics } from "./analytics";
@@ -17,6 +16,7 @@ import { Browser, Page } from "puppeteer";
 import { InternetException, LoginException } from "../account/funcs/exceptions";
 import Fs from "fs";
 import { log, warn } from "../logger/logger";
+import type { Pages } from './task.types';
 
 export class Task {
   readonly url: string;
@@ -33,14 +33,15 @@ export class Task {
   private prevLots: Array<LotItem> = [];
 
   private browser: Browser;
-  private page: Page;
+  private pages: Pages = {};
 
   lots: Array<LotItem> = [];
 
   constructor({ url, db, showAccount }: { url: string, db: MonitorDBInterface, showAccount?: boolean }) {
     this.url = url;
     this.db = db;
-    this.showAccount = showAccount;
+    // @TODO: Refactor init to allow hiding account
+    this.showAccount = true;
   }
 
   readonly analytics = new Analytics();
@@ -59,12 +60,24 @@ export class Task {
 
     this.analytics.startRecordingFetchTime();
     try {
-      const fetchResp = await fetch(this.url, {
-        timeout: 10000,
-      });
-      resp = await fetchResp.json();
+      const u = new URL(this.url);
+      const relativeURL = u.pathname + u.search + u.hash;
+
+
+      resp = await this.pages.lots!.evaluate(async (url) => {
+        // @ts-expect-error Evaluated in browser context
+        const lots = await fetch(url, {
+          method: `GET`,
+          headers: {
+            'Content-Type': `application/json`,
+          },
+          credentials: `include`
+        });
+        return await lots.json();
+      }, relativeURL);
+
     } catch (e) {
-      warn(`-! Request takes > 10s`);
+      warn(`-! Request error`);
       return;
     }
 
@@ -76,6 +89,7 @@ export class Task {
     this.compileLists();
   };
 
+  // @TODO: Refactor
   private initAccountFetcher = async (): Promise<void> => {
     const cookiesFromFile = await readCookies();
     const restoreCookies = await askForCookies(cookiesFromFile);
@@ -85,204 +99,203 @@ export class Task {
 
     await this.initInterceptors();
 
-    this.updateUserInfoInBackground();
-    setInterval(() => {
-      this.updateUserInfoInBackground();
-    }, 10000);
+    await this.gotoWithPreloader(this.pages.lots!, `/stock-exchange/my`);
+
+    this.startAutoUpdateUserInfo(10000);
   };
 
+  private startAutoUpdateUserInfo = (interval: number): void => {
+    const run = async () => {
+      try {
+        await this.updateUserInfoInBackground();
+      } catch (err: any) {
+        warn(`-! auto update error, ${err.message}`);
+      } finally {
+        setTimeout(run, interval);
+      }
+    };
+
+    run();
+  }
+
+
   private async initInterceptors(): Promise<void> {
-    const client = await this.page.target().createCDPSession();
+    const client = await this.pages.userInfo!.target().createCDPSession();
     await client.send(`Network.enable`);
     await client.send(`Network.setBypassServiceWorker`, { bypass: true });
 
-    await this.page.setRequestInterception(true);
-    await this.page.on(`request`, async (request) => {
-      if (request.url().endsWith(`created`) && request.method() === `GET`) {
-        const response = await (await fetch(request.url(), {
-          method: request.method(),
-          body: request.postData(),
-          headers: request.headers()
-        })).json();
+    // await this.pages.userInfo!.setRequestInterception(true);
 
-        if (response.data) {
-          this.userInfo.sold = {
-            internet: 0,
-            calls: 0,
-          };
-          this.userInfo.placed = {
-            internet: 0,
-            calls: 0,
-          };
-          this.userInfo.active = {
-            calls: 0,
-            internet: 0,
-            list: []
-          };
-          this.userInfo.dBalance = 0;
+    // Capture created lots response
+    this.pages.userInfo!.on(`response`, async (response) => {
+      const url = new URL(response.url());
 
-          for (const item of response.data) {
+      try {
+        if (url.pathname.endsWith(`created`) && response.request().method() === `GET`) {
+          const json = await response.json();
+
+          if (json.data) {
+            this.userInfo.sold = {
+              internet: 0,
+              calls: 0,
+            };
+            this.userInfo.placed = {
+              internet: 0,
+              calls: 0,
+            };
+            this.userInfo.active = {
+              calls: 0,
+              internet: 0,
+              list: []
+            };
+            this.userInfo.dBalance = 0;
+
+            for (const item of json.data) {
+
+              /**
+               * @param item {object}
+               * @param item.expirationDate {string}
+               * @param item.trafficType {string}
+               * @param item.cost {object}
+               * */
+
+              const expirationDate = new Date(item.expirationDate);
+              const nowDate = new Date();
+              if (nowDate <= expirationDate) {
+                if (item.trafficType === `voice`) {
+                  this.userInfo.placed.calls++;
+                  this.userInfo.sold.calls += (item.status === `bought`) ? 1 : 0;
+                  this.userInfo.active.calls += (item.status === `active`) ? 1 : 0;
+                } else if (item.trafficType === `data`) {
+                  this.userInfo.placed.internet++;
+                  this.userInfo.sold.internet += (item.status === `bought`) ? 1 : 0;
+                  this.userInfo.active.internet += (item.status === `active`) ? 1 : 0;
+                }
+
+                if (item.status === `bought`) {
+                  this.userInfo.dBalance += item.cost.amount;
+                }
+              }
+            }
+            // }
+
+            json.data = json.data.filter((item) => {
+              if (item.status === `active`) {
+                this.userInfo.active.list.push(item);
+                return true;
+              }
+
+              const creationDate = new Date(item.creationDate);
+              const nowDate = new Date();
+              const diff = Math.ceil(Math.abs(nowDate.getTime() - creationDate.getTime()) / (1000 * 60 * 60 * 24));
+
+              return (diff <= 1);
+            });
+     }
+        }
+      } catch (e: any) {
+        warn(`-! Created lots interceptor error: [${e.message}]`);
+      }
+    });
+
+    // Capture user rests
+    this.pages.userInfo!.on(`response`, async (response) => {
+      const url = new URL(response.url());
+
+      try {
+        if (url.pathname.includes(`rests`) && response.request().method() === `GET`) {
+          const json = await response.json();
+
+          if (json.data) {
+            // if (!this.userInfo?.rests) {
+            const item = json.data;
 
             /**
              * @param item {object}
-             * @param item.expirationDate {string}
-             * @param item.trafficType {string}
-             * @param item.cost {object}
+             * @param item.tariffCost {object}
+             * @param item.tariffCost.amount {string}
+             * @param item.tariffPackages {object}
+             * @param item.tariffPackages.internet {string}
+             * @param item.tariffPackages.min {string}
+             * @param restsItem {object}
+             * @param restsItem.rollover {boolean}
+             * @param restsItem.giftPackage {boolean}
+             * @param restsItem.remain {number}
+             * @param restsItem.uom {string}
              * */
 
-            const expirationDate = new Date(item.expirationDate);
-            const nowDate = new Date();
-            if (nowDate <= expirationDate) {
-              if (item.trafficType === `voice`) {
-                this.userInfo.placed.calls++;
-                this.userInfo.sold.calls += (item.status === `bought`) ? 1 : 0;
-                this.userInfo.active.calls += (item.status === `active`) ? 1 : 0;
-              } else if (item.trafficType === `data`) {
-                this.userInfo.placed.internet++;
-                this.userInfo.sold.internet += (item.status === `bought`) ? 1 : 0;
-                this.userInfo.active.internet += (item.status === `active`) ? 1 : 0;
-              }
 
-              if (item.status === `bought`) {
-                this.userInfo.dBalance += item.cost.amount;
+            const rollover = {
+              internet: 0,
+              calls: 0
+            };
+
+
+            for (const restsItem of item.rests) {
+              if (restsItem.rollover || restsItem.giftPackage) {
+                switch (restsItem.uom) {
+                  case `mb`:
+                    rollover.internet += restsItem.remain / 1024;
+                    break;
+                  case `min`:
+                    rollover.calls += restsItem.remain;
+                    break;
+                }
               }
             }
+
+            this.userInfo.rests = {
+              tariffCost: item.tariffCost.amount,
+              internet: item.tariffPackages.internet,
+              calls: item.tariffPackages.min,
+              sellable: {
+                internet: (parseFloat(item.tariffPackages.internet.replace(`,`, `.`)) - rollover.internet).toFixed(1),
+                calls: item.tariffPackages.min - rollover.calls
+              },
+              lotUplift: this.userInfo.rests?.lotUplift || 0,
+            };
           }
-          // }
-
-          response.data = response.data.filter((item) => {
-            if (item.status === `active`) {
-              this.userInfo.active.list.push(item);
-              return true;
-            }
-
-            const creationDate = new Date(item.creationDate);
-            const nowDate = new Date();
-            const diff = Math.ceil(Math.abs(nowDate.getTime() - creationDate.getTime()) / (1000 * 60 * 60 * 24));
-
-            return (diff <= 1);
-          });
-
         }
+      } catch (e: any) {
+        warn(`-! Rests interceptor error: [${e.message}]`);
+      }
+    });
 
-        /*
-        * Костылим, и пытаемся получить баланс
-        * */
+    // Capture user balance
+    this.pages.userInfo!.on(`response`, async (response) => {
+      const url = new URL(response.url());
 
-        const balanceResponse = await (await fetch(request.url().replace(`exchange/lots/created`, `balance`), {
-          method: request.method(),
-          body: request.postData(),
-          headers: request.headers()
-        })).json();
+      try {
+        if (url.pathname.endsWith(`balance`) && response.request().method() === `GET`) {
+          const json = await response.json();
 
-        if (balanceResponse.data) {
-          this.userInfo.balance = (balanceResponse.data.value) ? balanceResponse.data.value : this.userInfo.balance;
-        }
-
-        await request.respond({
-          status: 200,
-          contentType: `application/json`,
-          body: JSON.stringify(response),
-        });
-      } else if (request.url().endsWith(`rests`) && request.method() === `GET`) {
-        const response = await (await fetch(request.url(), {
-          method: request.method(),
-          body: request.postData(),
-          headers: request.headers()
-        })).json();
-
-        if (response.data) {
-          // if (!this.userInfo?.rests) {
-          const item = response.data;
-
-          /**
-           * @param item {object}
-           * @param item.tariffCost {object}
-           * @param item.tariffCost.amount {string}
-           * @param item.tariffPackages {object}
-           * @param item.tariffPackages.internet {string}
-           * @param item.tariffPackages.min {string}
-           * @param restsItem {object}
-           * @param restsItem.rollover {boolean}
-           * @param restsItem.giftPackage {boolean}
-           * @param restsItem.remain {number}
-           * @param restsItem.uom {string}
-           * */
-
-
-          const rollover = {
-            internet: 0,
-            calls: 0
-          };
-
-
-          for (const restsItem of item.rests) {
-            if (restsItem.rollover || restsItem.giftPackage) {
-              switch (restsItem.uom) {
-                case `mb`:
-                  rollover.internet += restsItem.remain / 1024;
-                  break;
-                case `min`:
-                  rollover.calls += restsItem.remain;
-                  break;
-              }
-            }
+          if (json.data) {
+            this.userInfo.balance = (json.data.value) ? json.data.value : this.userInfo.balance;
           }
-
-          this.userInfo.rests = {
-            tariffCost: item.tariffCost.amount,
-            internet: item.tariffPackages.internet,
-            calls: item.tariffPackages.min,
-            sellable: {
-              internet: (parseFloat(item.tariffPackages.internet.replace(`,`, `.`)) - rollover.internet).toFixed(1),
-              calls: item.tariffPackages.min - rollover.calls
-            },
-            lotUplift: this.userInfo.rests?.lotUplift || 0,
-          };
-          // }
         }
+      } catch (e: any) {
+        warn(`-! Balance interceptor error: [${e.message}]`);
+      }
+    });
 
-        await request.respond({
-          status: 200,
-          contentType: `application/json`,
-          body: JSON.stringify(response),
-        });
-      } else if (request.url().endsWith(`balance`) && request.method() === `GET`) {
-        const response = await (await fetch(request.url(), {
-          method: request.method(),
-          body: request.postData(),
-          headers: request.headers()
-        })).json();
+    // Capture user charges
+    this.pages.userInfo!.on(`response`, async (response) => {
+      const url = new URL(response.url());
 
-        if (response.data) {
-          this.userInfo.balance = (response.data.value) ? response.data.value : this.userInfo.balance;
+      try {
+        if (url.pathname.endsWith(`charges`) && response.request().method() === `GET`) {
+          const json = await response.json();
+
+          if (json.data) {
+            this.userInfo.rests.lotUplift = json
+              ?.data?.filter((item) => item.type === `CONTENT`)?.[0]
+              ?.subGroups?.filter((item) => item.name === `Разовые операции`)?.[0]
+              ?.consumingServices?.filter((item) => item.billingServiceId === 0)?.[0]
+              ?.amount?.amount || 0;
+          }
         }
-
-        await request.respond({
-          status: 200,
-          contentType: `application/json`,
-          body: JSON.stringify(response),
-        });
-      } else if (request.url().includes(`charges`) && request.method() === `GET`) {
-        const response = await (await fetch(request.url(), {
-          method: request.method(),
-          body: request.postData(),
-          headers: request.headers()
-        })).json();
-
-        this.userInfo.rests.lotUplift = response
-          ?.data?.filter((item) => item.type === `CONTENT`)?.[0]
-          ?.subGroups?.filter((item) => item.name === `Разовые операции`)?.[0]
-          ?.consumingServices?.filter((item) => item.billingServiceId === 0)?.[0]
-          ?.amount?.amount || 0;
-
-        await request.respond({
-          status: 200,
-          contentType: `application/json`,
-          body: JSON.stringify(response),
-        });
-      } else {
-        await request.continue();
+      } catch (e: any) {
+        warn(`-! Charges interceptor error: [${e.message}]`);
       }
     });
   }
@@ -291,31 +304,31 @@ export class Task {
     let s;
 
     if (restoreCookies) {
-      await this.page.setCookie(...cookiesFromFile);
+      await this.pages.userInfo!.setCookie(...cookiesFromFile);
     }
 
-    await this.page.goto(this.getLink(), { waitUntil: `load` }).catch(() => {
+    await this.pages.userInfo!.goto(this.getLink(), { waitUntil: `load` }).catch(() => {
       InternetException.handle();
     });
 
-    if (!(await isLogined(this.page))) {
-      await this.page.goto(this.getLink(), { waitUntil: `load` }).catch(() => {
+    if (!(await isLogined(this.pages.userInfo!))) {
+      await this.pages.userInfo!.goto(this.getLink(), { waitUntil: `load` }).catch(() => {
         InternetException.handle();
       });
 
-      await this.page.waitForTimeout(1000);
+      await this.pages.userInfo!.waitForTimeout(1000);
       log(`-@ Checking bubble`);
-      await wClick(this.page, `.ask-for-region2 .bubble__button`);
+      await wClick(this.pages.userInfo!, `.ask-for-region2 .bubble__button`);
 
-      await this.page.waitForTimeout(1000);
+      await this.pages.userInfo!.waitForTimeout(1000);
       log(`-@ Logging in`);
       log(`-@ clicking item`);
-      await wClick(this.page, `header span.tele2-ui-kit__button-text-children`);
-      await wClick(this.page, `header span.tele2-ui-kit__button-text-children`);
+      await wClick(this.pages.userInfo!, `header span.tele2-ui-kit__button-text-children`);
+      await wClick(this.pages.userInfo!, `header span.tele2-ui-kit__button-text-children`);
       log(`-@ clicked item`);
       for (let erCount = 1; erCount <= 3; erCount++) {
-        if (await isLogined(this.page)) {
-          const cookies = await this.page.cookies();
+        if (await isLogined(this.pages.userInfo!)) {
+          const cookies = await this.pages.userInfo!.cookies();
           await Fs.writeFile(`./db/cookies.json`, JSON.stringify(cookies, null, 2), (e) => {
             if (e) {
               throw e;
@@ -329,11 +342,11 @@ export class Task {
 
         try {
           s = `form.keycloak-login-form input[type="tel"]`;
-          await wClick(this.page, s);
-          await wClick(this.page, s, 500);
-          await this.page.type(s, this.db.phone + ``);
+          await wClick(this.pages.userInfo!, s);
+          await wClick(this.pages.userInfo!, s, 500);
+          await this.pages.userInfo!.type(s, this.db.phone + ``);
 
-          await wClick(this.page, `form.keycloak-login-form button[type="submit"]`);
+          await wClick(this.pages.userInfo!, `form.keycloak-login-form button[type="submit"]`);
 
           let pin;
           do {
@@ -341,12 +354,12 @@ export class Task {
             pin = await readExp(/[0-9]{6}/);
             s = `input[name="SMS"]`;
 
-            const input = await this.page.$(s);
+            const input = await this.pages.userInfo!.$(s);
             await input.type(pin);
-            await this.page.waitForTimeout(100);
+            await this.pages.userInfo!.waitForTimeout(100);
           } while (await (async () => {
             try {
-              await this.page.waitForSelector(`form .error-text`, { timeout: 5000 });
+              await this.pages.userInfo!.waitForSelector(`form .error-text`, { timeout: 5000 });
               warn(`Wrong code. Repeating`);
               return true;
             } catch (e) {
@@ -354,8 +367,8 @@ export class Task {
             }
           })());
 
-          if (await isLogined(this.page)) {
-            const cookies = await this.page.cookies();
+          if (await isLogined(this.pages.userInfo!)) {
+            const cookies = await this.pages.userInfo!.cookies();
             await Fs.writeFile(`./db/cookies.json`, JSON.stringify(cookies, null, 2), (e) => {
               if (e) {
                 throw e;
@@ -377,13 +390,13 @@ export class Task {
         }
       }
     }
-    await isLogined(this.page);
+    await isLogined(this.pages.userInfo!);
   };
 
-  private gotoWithPreloader = async (link) => {
-    await this.page.goto(this.getLink(link), { waitUntil: `load` });
+  private gotoWithPreloader = async (page: Page, link: string) => {
+    await page.goto(this.getLink(link), { waitUntil: `load` });
     try {
-      await this.page.waitForSelector(`.preloader-icon`, { hidden: true, timeout: 30000 });
+      await page.waitForSelector(`.preloader-icon`, { hidden: true, timeout: 30000 });
     } catch (e) {
       // warn(`"${link}": [Bad connection]. Repeating`);
     }
@@ -393,7 +406,7 @@ export class Task {
     try {
       // Перейдем на страницу с лотами, чтобы перехватить запрос и получить инфу о профиле
 
-      await this.gotoWithPreloader(`/stock-exchange/my`);
+      await this.gotoWithPreloader(this.pages.userInfo!, `/stock-exchange/my`);
 
       if (!this.userInfo.calls0 && this.userInfo.sold.calls) {
         this.userInfo.calls0 = this.userInfo.sold.calls;
@@ -403,11 +416,12 @@ export class Task {
       }
 
       // Перейдем на страницу с лотами, чтобы перехватить запрос и получить инфу о профиле
-      await this.gotoWithPreloader(`/stock-exchange/my`);
-      await this.gotoWithPreloader(`/lk/expenses`);
+      await this.gotoWithPreloader(this.pages.userInfo!, `/stock-exchange/my`);
+      await this.gotoWithPreloader(this.pages.userInfo!, `/lk`);
+      await this.gotoWithPreloader(this.pages.userInfo!, `/lk/expenses`);
 
       // Сохраним куки, вдруг поменялись
-      const cookies = await this.page.cookies();
+      const cookies = await this.pages.userInfo!.cookies();
       await Fs.writeFile(`./db/cookies.json`, JSON.stringify(cookies, null, 2), (e) => {
         if (e) {
           throw e;
@@ -422,8 +436,8 @@ export class Task {
   private openBrowserAndGetPage = async () => {
     const browser = await openNewBrowser(this.getLink(), this.db.headless);
     this.browser = browser;
-    this.page = await browser.newPage();
-
+    this.pages.lots = await browser.newPage();
+    this.pages.userInfo = await browser.newPage();
   };
 
   private getLink = linkGetterGenerator(opt.origin);
