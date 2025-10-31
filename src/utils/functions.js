@@ -360,7 +360,7 @@ export const parseArgv = () => {
   const rules = {
     source: {
       type: String,
-      short: `t`,
+      short: `s`,
       value: (type) => {
         if (!type) {
           return;
